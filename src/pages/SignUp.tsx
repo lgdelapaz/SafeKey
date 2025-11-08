@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LockIcon, UserIcon, AlertCircleIcon } from 'lucide-react';
+import { LockIcon, UserIcon, AlertCircleIcon, PhoneIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { checkPasswordStrength } from '../utils/encryption';
 const SignUp = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const {
@@ -47,6 +48,40 @@ const SignUp = () => {
         return 'Enter a password';
     }
   };
+  // Format phone number for display
+  const formatPhoneNumber = (value: string) => {
+    // Remove non-digit characters
+    const digits = value.replace(/\D/g, '');
+    // Handle different input formats
+    if (digits.startsWith('63') && digits.length > 2) {
+      return `+63 ${digits.slice(2)}`;
+    } else if (digits.startsWith('0') && digits.length > 1) {
+      return `+63 ${digits.slice(1)}`;
+    } else if (digits) {
+      return `+63 ${digits}`;
+    }
+    return '';
+  };
+  // Get raw phone number for validation and storage
+  const getRawPhoneNumber = (formatted: string) => {
+    const digits = formatted.replace(/\D/g, '');
+    if (digits.startsWith('63')) {
+      return digits;
+    } else {
+      return `63${digits}`;
+    }
+  };
+  // Validate Philippine phone number format
+  const isValidPhilippineNumber = (phone: string) => {
+    const digits = phone.replace(/\D/g, '');
+    // Check if it's a valid Philippine mobile number format
+    // Should be 63 + 10 digits starting with 9 (639XXXXXXXXX)
+    return /^63\d{10}$/.test(digits) && digits.slice(2, 3) === '9';
+  };
+  const handlePhoneNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formattedNumber = formatPhoneNumber(e.target.value);
+    setPhoneNumber(formattedNumber);
+  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
@@ -61,9 +96,18 @@ const SignUp = () => {
       toast.error('Please use a stronger password. ' + passwordStrength.feedback);
       return;
     }
+    const rawPhoneNumber = getRawPhoneNumber(phoneNumber);
+    if (!phoneNumber || phoneNumber === '+63 ') {
+      toast.error('Please enter your phone number');
+      return;
+    }
+    if (!isValidPhilippineNumber(rawPhoneNumber)) {
+      toast.error('Please enter a valid Philippine mobile number (e.g., +63 9XX XXX XXXX)');
+      return;
+    }
     setIsLoading(true);
     try {
-      const success = await signup(username, password);
+      const success = await signup(username, password, rawPhoneNumber);
       if (success) {
         toast.success('Account created successfully!');
         navigate('/');
@@ -99,6 +143,21 @@ const SignUp = () => {
                   </div>
                   <input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Choose a username" />
                 </div>
+              </div>
+              {/* Phone Number Field */}
+              <div>
+                <label htmlFor="phoneNumber" className="block text-gray-700 dark:text-gray-300 text-lg mb-2">
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <PhoneIcon className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input id="phoneNumber" type="tel" value={phoneNumber} onChange={handlePhoneNumberChange} className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="+63 9XX XXX XXXX" />
+                </div>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Philippine mobile number starting with +63
+                </p>
               </div>
               <div>
                 <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 text-lg mb-2">

@@ -119,56 +119,17 @@ export const addExamplePasswords = (userId: string): void => {
     if (existingPasswords.length > 0) {
       return; // Don't add examples if user already has passwords
     }
+    // Only add one sample password - Gmail
     const examplePasswords = [{
-      title: 'Facebook',
-      website: 'facebook.com',
-      username: 'john.doe@example.com',
-      password: encryptData('Facebook@123', 'MASTER_KEY'),
-      notes: 'Personal Facebook account',
-      category: 'Social Media',
-      id: '1001',
-      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days ago
-    }, {
       title: 'Gmail',
       website: 'mail.google.com',
       username: 'john.doe@gmail.com',
       password: encryptData('Gmail@2023!', 'MASTER_KEY'),
-      notes: 'Personal email account',
+      notes: 'Sample saved account',
       category: 'Email',
       id: '1002',
       createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
       updatedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-    }, {
-      title: 'Amazon',
-      website: 'amazon.com',
-      username: 'john.doe@example.com',
-      password: encryptData('Shop$Secure789', 'MASTER_KEY'),
-      notes: 'Prime membership renews on January 15',
-      category: 'Shopping',
-      id: '1003',
-      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() // 5 days ago
-    }, {
-      title: 'Bank of America',
-      website: 'bankofamerica.com',
-      username: 'johndoe',
-      password: encryptData('B@nk!Secure456', 'MASTER_KEY'),
-      notes: 'Checking account #1234',
-      category: 'Banking',
-      id: '1004',
-      createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days ago
-    }, {
-      title: 'Netflix',
-      website: 'netflix.com',
-      username: 'john.doe@example.com',
-      password: encryptData('Stream@Movies2023', 'MASTER_KEY'),
-      notes: 'Family subscription',
-      category: 'Entertainment',
-      id: '1005',
-      createdAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-      updatedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString() // 10 days ago
     }];
     localStorage.setItem(`safekey_passwords_${userId}`, JSON.stringify(examplePasswords));
   } catch (error) {

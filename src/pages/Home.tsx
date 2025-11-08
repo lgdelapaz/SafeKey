@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlusIcon, KeyIcon, ShieldIcon, HelpCircleIcon, AlertCircleIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { addExamplePasswords } from '../utils/passwordManager';
+import { useAutoLock } from '../utils/autoLock';
+import { supabase, setCurrentUser } from '../lib/supabaseClient';
 const Home = () => {
   const navigate = useNavigate();
   const {
@@ -10,19 +11,76 @@ const Home = () => {
   } = useAuth();
   const [passwordCount, setPasswordCount] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [autoLockMinutes, setAutoLockMinutes] = useState(5);
+  
+  // Load auto-lock setting from Supabase
   useEffect(() => {
-    // Load password count from localStorage
-    if (user) {
-      // Add example passwords for new users
-      addExamplePasswords(user.id);
-      const passwords = JSON.parse(localStorage.getItem(`safekey_passwords_${user.id}`) || '[]');
-      setPasswordCount(passwords.length);
-      // Get the most recently updated password date
-      if (passwords.length > 0) {
-        const sortedPasswords = [...passwords].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        setLastUpdated(new Date(sortedPasswords[0].updatedAt).toLocaleDateString());
+    const loadAutoLockSetting = async () => {
+      if (user) {
+        try {
+          const { data, error } = await supabase
+            .from('security_settings')
+            .select('auto_lock_timer')
+            .eq('user_id', user.id)
+            .single();
+
+          if (!error && data) {
+            setAutoLockMinutes(data.auto_lock_timer || 5);
+          }
+        } catch (error) {
+          console.error('Error loading auto-lock setting:', error);
+        }
       }
-    }
+    };
+
+    loadAutoLockSetting();
+  }, [user]);
+
+  // Initialize auto-lock
+  useAutoLock(autoLockMinutes);
+  useEffect(() => {
+    const loadPasswordStats = async () => {
+      if (user) {
+        try {
+          // Ensure user context is set for RLS
+          await setCurrentUser(user.id);
+          
+          // Get password stats using service function
+          const { data, error } = await supabase
+            .rpc('get_password_stats', {
+              p_user_id: user.id
+            });
+
+          if (error) {
+            console.error('Error loading password stats:', error);
+            setPasswordCount(0);
+            setLastUpdated(null);
+            return;
+          }
+
+          if (data && data.length > 0) {
+            const stats = data[0];
+            setPasswordCount(Number(stats.password_count) || 0);
+            
+            if (stats.last_updated) {
+              const mostRecent = new Date(stats.last_updated);
+              setLastUpdated(mostRecent.toLocaleDateString());
+            } else {
+              setLastUpdated(null);
+            }
+          } else {
+            setPasswordCount(0);
+            setLastUpdated(null);
+          }
+        } catch (error) {
+          console.error('Error loading password stats:', error);
+          setPasswordCount(0);
+          setLastUpdated(null);
+        }
+      }
+    };
+
+    loadPasswordStats();
   }, [user]);
   return <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900">
       <header className="bg-blue-600 dark:bg-blue-800 text-white p-6">

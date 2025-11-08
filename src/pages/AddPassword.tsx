@@ -1,10 +1,15 @@
+// src/pages/AddPassword.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GlobeIcon, UserIcon, LockIcon, EyeIcon, EyeOffIcon, TagIcon, RefreshCwIcon, AlertCircleIcon } from 'lucide-react';
+import { GlobeIcon, UserIcon, LockIcon, EyeIcon, EyeOffIcon, TagIcon, RefreshCwIcon, AlertCircleIcon, CheckIcon, XIcon, EditIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import { encryptData, generateStrongPassword, checkPasswordStrength } from '../utils/encryption';
 import { toast } from 'sonner';
+// 1. Import the Supabase client
+import { supabase } from '../lib/supabaseClient'; // Ensure path is correct
+import { generateAIPassword } from '../lib/huggingfaceClient';
+
 const AddPassword = () => {
   const {
     user
@@ -15,21 +20,82 @@ const AddPassword = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [notes, setNotes] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState(''); // Stores the selected category NAME
   const [showPassword, setShowPassword] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [isGeneratingAIPassword, setIsGeneratingAIPassword] = useState(false);
+  // State for categories fetched from Supabase
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  
+  // Preset categories
+  const presetCategories = [
+    'Social Media',
+    'Banking', 
+    'Email',
+    'Work',
+    'Shopping',
+    'Entertainment',
+    'Gaming',
+    'Education',
+    'Health',
+    'Travel'
+  ];
   const passwordStrength = checkPasswordStrength(password);
+
+  // 2. Effect to load categories from Supabase on component mount
   useEffect(() => {
-    if (user) {
-      // Load existing categories from passwords
-      const storedPasswords = JSON.parse(localStorage.getItem(`safekey_passwords_${user.id}`) || '[]');
-      const uniqueCategories = Array.from(new Set(storedPasswords.map((pw: any) => pw.category || '').filter(Boolean)));
-      setCategories(uniqueCategories as string[]);
-    }
+    const fetchCategories = async () => {
+      if (user) {
+        try {
+          console.log("Fetching categories for user:", user.id);
+          // Fetch categories from Supabase for the current user
+          const { data: categoriesData, error: categoriesError } = await supabase
+            .from('categories')
+            .select('category_id, category_name') // Select ID and name
+            .eq('user_id', user.id)
+            .order('category_name'); // Order alphabetically
+
+          if (categoriesError) {
+            console.error('Error fetching categories from Supabase:', categoriesError);
+            // Optionally, toast an error message
+            // toast.error('Failed to load categories.');
+            // Still allow proceeding, perhaps with only 'Uncategorized' option
+            setCategories([]); // Or set a default like [{ id: 'uncategorized', name: 'Uncategorized' }]
+            return;
+          }
+
+          // Map Supabase data to component state format
+          const mappedCategories = (categoriesData || []).map(cat => ({
+            id: cat.category_id,
+            name: cat.category_name
+          }));
+
+          // Combine preset categories with user categories (avoid duplicates)
+          const userCategoryNames = mappedCategories.map(cat => cat.name);
+          const uniquePresets = presetCategories.filter(preset => !userCategoryNames.includes(preset));
+          const presetCategoryObjects = uniquePresets.map(name => ({ id: `preset-${name}`, name }));
+          
+          setCategories([...presetCategoryObjects, ...mappedCategories]);
+          console.log("Fetched categories from Supabase:", mappedCategories);
+
+        } catch (err) {
+          console.error('Unexpected error fetching categories:', err);
+          // toast.error('Failed to load categories.');
+          setCategories([]);
+        }
+      }
+    };
+
+    fetchCategories();
   }, [user]);
-  const handleSubmit = (e: React.FormEvent) => {
+
+  // 3. Updated handleSubmit function to save to Supabase
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      toast.error('You must be logged in to save a password.');
+      return;
+    }
     if (!title || !password) {
       toast.error('Please provide at least a title and password');
       return;
@@ -40,32 +106,93 @@ const AddPassword = () => {
       }
     }
     try {
-      // Encrypt the password
+      // 4. Encrypt the password
       const encryptedPassword = encryptData(password, 'MASTER_KEY');
-      // Create new password entry
-      const newPassword = {
-        id: Date.now().toString(),
-        title,
-        website,
-        username,
-        password: encryptedPassword,
-        notes,
-        category: category || 'Uncategorized',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      console.log("Encrypted password:", encryptedPassword);
+
+      // 5. Resolve category name to category_id if a category is selected
+      let categoryIdToInsert: string | null = null;
+      if (category && category.trim() !== '') {
+        const matchedCategory = categories.find(cat => cat.name === category.trim());
+        if (matchedCategory && !matchedCategory.id.startsWith('preset-')) {
+          // Existing user category
+          categoryIdToInsert = matchedCategory.id;
+        } else {
+          // Create new category using service function
+          const { data: newCategoryId, error: categoryError } = await supabase
+            .rpc('safe_insert_category', {
+              p_user_id: user.id,
+              p_category_name: category.trim()
+            });
+          
+          if (categoryError) {
+            console.error('Error creating category:', categoryError);
+            toast.error('Failed to create category');
+            return;
+          }
+          
+          categoryIdToInsert = newCategoryId;
+          // Update local categories list
+          setCategories(prev => {
+            // Remove preset version if it exists
+            const filtered = prev.filter(cat => cat.name !== category.trim());
+            return [...filtered, { id: newCategoryId, name: category.trim() }];
+          });
+        }
+      }
+
+      // 6. Prepare data for Supabase INSERT
+      const passwordEntry = {
+        user_id: user.id, // Associate with the current user
+        category_id: categoryIdToInsert, // Use the resolved category ID, or null for Uncategorized
+        platform_name: title, // Map 'title' to 'platform_name'
+        username: username,
+        password_value: encryptedPassword, // Map 'password' (encrypted) to 'password_value'
+        url: website || null, // Map 'website' to 'url', allow null
+        notes: notes || null // Allow null for notes
+        // created_at and updated_at are handled by default in Supabase
       };
-      // Get existing passwords and add the new one
-      const existingPasswords = JSON.parse(localStorage.getItem(`safekey_passwords_${user?.id}`) || '[]');
-      const updatedPasswords = [...existingPasswords, newPassword];
-      // Save to localStorage
-      localStorage.setItem(`safekey_passwords_${user?.id}`, JSON.stringify(updatedPasswords));
+      console.log("Password entry prepared for Supabase:", passwordEntry);
+
+      // 7. Insert the password entry using service function
+      console.log("Attempting to insert password into Supabase...");
+      const { data, error } = await supabase
+        .rpc('safe_insert_password', {
+          p_user_id: user.id,
+          p_category_id: categoryIdToInsert,
+          p_platform_name: title,
+          p_username: username,
+          p_password_value: encryptedPassword,
+          p_url: website || null,
+          p_notes: notes || null
+        });
+
+      console.log("Supabase password insert response - Data:", data, "Error:", error);
+
+      if (error) {
+        console.error('Error saving password to Supabase:', error);
+        toast.error(`Failed to save password: ${error.message || 'Unknown error'}`);
+        return; // Stop execution if there's an error
+      }
+
+      // 8. Success: Update UI and navigate
+      console.log("Password saved successfully to Supabase");
       toast.success('Password saved successfully!');
-      navigate('/passwords');
+      // Clear form fields after successful save (optional)
+      setTitle('');
+      setWebsite('');
+      setUsername('');
+      setPassword('');
+      setNotes('');
+      setCategory('');
+      navigate('/passwords'); // Navigate back to passwords list
+
     } catch (error) {
-      toast.error('Failed to save password. Please try again.');
-      console.error('Save password error:', error);
+      console.error('Unexpected error saving password:', error);
+      toast.error('Failed to save password due to an unexpected error. Please try again.');
     }
   };
+
   const generatePassword = () => {
     setIsGeneratingPassword(true);
     setTimeout(() => {
@@ -84,6 +211,21 @@ const AddPassword = () => {
       setIsGeneratingPassword(false);
     }, 500); // small delay to show loading state
   };
+
+  const generateAIPasswordHandler = async () => {
+    setIsGeneratingAIPassword(true);
+    try {
+      const aiPassword = await generateAIPassword();
+      setPassword(aiPassword);
+      setShowPassword(true);
+      toast.success('AI password generated!');
+    } catch (error) {
+      toast.error('Failed to generate AI password');
+    } finally {
+      setIsGeneratingAIPassword(false);
+    }
+  };
+
   const getStrengthColor = () => {
     switch (passwordStrength.score) {
       case 0:
@@ -100,6 +242,7 @@ const AddPassword = () => {
         return 'bg-gray-300';
     }
   };
+
   const getStrengthText = () => {
     switch (passwordStrength.score) {
       case 0:
@@ -116,6 +259,7 @@ const AddPassword = () => {
         return 'Enter a password';
     }
   };
+
   return <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900">
       <Header title="Add New Password" />
       <div className="p-4">
@@ -180,10 +324,16 @@ const AddPassword = () => {
                     </span>}
                 </div>
               </div>}
-            <button type="button" onClick={generatePassword} disabled={isGeneratingPassword} className="mt-3 flex items-center justify-center w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors">
-              {isGeneratingPassword ? <RefreshCwIcon size={20} className="mr-2 animate-spin" /> : <RefreshCwIcon size={20} className="mr-2" />}
-              Generate Strong Password
-            </button>
+            <div className="mt-3 space-y-2">
+              <button type="button" onClick={generatePassword} disabled={isGeneratingPassword} className="flex items-center justify-center w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors">
+                {isGeneratingPassword ? <RefreshCwIcon size={20} className="mr-2 animate-spin" /> : <RefreshCwIcon size={20} className="mr-2" />}
+                Generate Strong Password
+              </button>
+              <button type="button" onClick={generateAIPasswordHandler} disabled={isGeneratingAIPassword} className="flex items-center justify-center w-full bg-blue-200 dark:bg-blue-700 hover:bg-blue-300 dark:hover:bg-blue-600 text-blue-800 dark:text-blue-200 font-medium py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors">
+                {isGeneratingAIPassword ? <RefreshCwIcon size={20} className="mr-2 animate-spin" /> : <RefreshCwIcon size={20} className="mr-2" />}
+                Generate AI Password
+              </button>
+            </div>
           </div>
           <div>
             <label htmlFor="category" className="block text-gray-700 dark:text-gray-300 text-lg mb-2">
@@ -193,9 +343,12 @@ const AddPassword = () => {
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                 <TagIcon className="h-5 w-5 text-gray-400" />
               </div>
-              <input id="category" type="text" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Social Media, Banking, Work" list="categories" className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              {/* 9. Updated category input to use state and datalist */}
+              <input id="category" type="text" value={category} onChange={e => setCategory(e.target.value)} placeholder="Select or type a category" list="categories" className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              {/* 10. Populate datalist with categories fetched from Supabase */}
               <datalist id="categories">
-                {categories.map((cat, index) => <option key={index} value={cat} />)}
+                {/* Map fetched categories */}
+                {categories.map((cat) => <option key={cat.id} value={cat.name} />)}
               </datalist>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { ShieldIcon, KeyIcon, EyeIcon, ClockIcon, SettingsIcon, TypeIcon, MoonIc
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import { toast } from 'sonner';
+import { useAutoLock } from '../utils/autoLock';
 const MenuItem = ({
   icon,
   title,
@@ -45,6 +46,10 @@ const Menu = () => {
     logout,
     user
   } = useAuth();
+  // Get auto-lock timer setting for the current user
+  const autoLockMinutes = user ? Number(JSON.parse(localStorage.getItem(`safekey_security_${user.id}`) || '{"autoLockTimer":5}').autoLockTimer) : 5;
+  // Initialize auto-lock
+  useAutoLock(autoLockMinutes);
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to log out?')) {
       logout();
@@ -67,7 +72,6 @@ const Menu = () => {
         <MenuSection title="Security">
           <MenuItem icon={<KeyIcon size={24} />} title="Change Master Password" description="Update your vault's master password" onClick={() => navigate('/change-master-password')} />
           <MenuItem icon={<ShieldIcon size={24} />} title="Security Settings" description="PIN, fingerprint, and other security options" onClick={() => navigate('/security-settings')} />
-          <MenuItem icon={<ClockIcon size={24} />} title="Auto-Lock Timer" description="Set how quickly your vault locks automatically" onClick={() => navigate('/lock-timer')} />
         </MenuSection>
         <MenuSection title="Accessibility">
           <MenuItem icon={<TypeIcon size={24} />} title="Font Size" description="Adjust text size for better readability" onClick={() => navigate('/font-size')} />

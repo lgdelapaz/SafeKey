@@ -3,3 +3,20 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 /* DO NOT DELETE THESE TAILWIND IMPORTS, OTHERWISE THE STYLING WILL NOT RENDER AT ALL */
+/* Font Size Classes */
+:root.text-small {
+  font-size: 14px;
+}
+:root.text-medium {
+  font-size: 16px;
+}
+:root.text-large {
+  font-size: 18px;
+}
+:root.text-extra-large {
+  font-size: 20px;
+}
+/* Ensure all text inherits the root font size */
+body {
+  font-size: 1rem;
+}
